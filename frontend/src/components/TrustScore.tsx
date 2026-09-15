@@ -13,65 +13,53 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
   size = 180,
   strokeWidth = 14
 }) => {
+  const safeScore = Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
   const [animatedScore, setAnimatedScore] = useState(0);
-  
-  // Count-up effect on score change
+
   useEffect(() => {
-    setAnimatedScore(0);
-    const duration = 1200; // ms
+    const duration = 900;
     const startTime = performance.now();
-    
-    let animationFrameId: number;
-    
+    let frameId = 0;
+
     const animate = (currentTime: number) => {
-      const elapsedTime = currentTime - startTime;
-      const progress = Math.min(elapsedTime / duration, 1);
-      
-      // Easing function (easeOutQuad)
-      const easeProgress = progress * (2 - progress);
-      const currentVal = Math.round(easeProgress * score);
-      
-      setAnimatedScore(currentVal);
-      
+      const progress = Math.min((currentTime - startTime) / duration, 1);
+      const eased = progress * (2 - progress);
+      setAnimatedScore(Math.round(eased * safeScore));
       if (progress < 1) {
-        animationFrameId = requestAnimationFrame(animate);
+        frameId = requestAnimationFrame(animate);
       }
     };
-    
-    animationFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [score]);
 
-  // Determine indicator color based on score/risk
-  let color = '#EF4444'; // default danger red
+    frameId = requestAnimationFrame(animate);
+
+    return () => cancelAnimationFrame(frameId);
+  }, [safeScore]);
+
+  let color = '#EF4444';
   let shadowGlow = 'rgba(239, 68, 68, 0.3)';
 
-  if (score >= 80) {
-    color = '#22C55E'; // Success green
+  if (safeScore >= 80) {
+    color = '#22C55E';
     shadowGlow = 'rgba(34, 197, 94, 0.3)';
-  } else if (score >= 60) {
-    color = '#3B82F6'; // Info blue
+  } else if (safeScore >= 60) {
+    color = '#3B82F6';
     shadowGlow = 'rgba(59, 130, 246, 0.3)';
-  } else if (score >= 40) {
-    color = '#F59E0B'; // Warning yellow/orange
+  } else if (safeScore >= 40) {
+    color = '#F59E0B';
     shadowGlow = 'rgba(245, 158, 11, 0.3)';
   }
 
-  // Calculate SVG circular parameters
-  const radius = (size - strokeWidth) / 2;
+  const radius = Math.max(1, (size - strokeWidth) / 2);
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (animatedScore / 100) * circumference;
 
   return (
     <div className="relative flex flex-col items-center justify-center" style={{ width: size, height: size }}>
-      {/* Outer shadow glow */}
-      <div 
+      <div
         className="absolute inset-2 rounded-full blur-xl transition-all duration-700 opacity-20"
         style={{ background: color }}
       />
-      
-      <svg width={size} height={size} className="transform -rotate-90">
-        {/* Background Circle */}
+      <svg width={size} height={size} className="-rotate-90">
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -80,7 +68,6 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
           stroke="#18181b"
           strokeWidth={strokeWidth}
         />
-        {/* Animated Progress Circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -91,29 +78,25 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
-          style={{
-            transition: 'stroke-dashoffset 0.1s ease-out, stroke 0.5s ease'
-          }}
+          style={{ transition: 'stroke-dashoffset 0.1s ease-out, stroke 0.5s ease' }}
         />
       </svg>
-      
-      {/* Inner Label Container */}
       <div className="absolute flex flex-col items-center justify-center text-center">
-        <span 
-          className="text-4xl md:text-5xl font-bold font-mono tracking-tight transition-all"
-          style={{ color: color, textShadow: `0 0 10px ${shadowGlow}` }}
+        <span
+          className="text-4xl md:text-5xl font-bold font-mono tracking-tight"
+          style={{ color, textShadow: `0 0 10px ${shadowGlow}` }}
         >
           {animatedScore}
         </span>
         <span className="text-xs uppercase tracking-widest text-slate-400 font-semibold mt-1">
           Trust Score
         </span>
-        <span 
+        <span
           className="text-xs font-semibold px-2 py-0.5 rounded-full mt-2 border"
           style={{
-            borderColor: color + '40',
-            backgroundColor: color + '15',
-            color: color
+            borderColor: `${color}40`,
+            backgroundColor: `${color}15`,
+            color
           }}
         >
           {riskLevel}
@@ -122,4 +105,5 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
     </div>
   );
 };
+
 export default TrustScore;
