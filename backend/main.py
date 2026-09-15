@@ -1,230 +1,221 @@
 from __future__ import annotations
 
-import os
-import uuid
 from datetime import datetime, timezone
-from threading import Lock
-from typing import Any, Optional
+import os
+from pathlib import Path
+import uuid
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 from supabase import Client, create_client
 
-from analyzer import UnsafeTargetError, analyze_url
+from analyzer import analyze_url
 from gemini_client import get_ai_explanation
 
 load_dotenv()
 
-MAX_URL_LENGTH = 2048
-HISTORY_LIMIT = 20
+app = FastAPI(title="GhostNet Backend", version="1.0.0")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+supabase_client: Client | None = None
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if SUPABASE_URL and SUPABASE_KEY and SUPABASE_URL != "your_supabase_url_here" and SUPABASE_KEY != "your_supabase_anon_key_here":
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("Successfully connected to Supabase database.")
+    except Exception as e:
+        print(f"Failed to connect to Supabase: {str(e)}. Falling back to in-memory store.")
+else:
+    print("Supabase credentials not configured. Scans will be stored in-memory.")
+
+
+in_memory_scans: list[dict] = []
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root() -> HTMLResponse:
+    template_path = Path(__file__).resolve().parent / "templates" / "index.html"
+    if template_path.exists():
+        return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>GhostNet Template Missing</h1>", status_code=404)
+
+class ScanRequest(BaseModel):
+    url: str
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("URL cannot be empty")
+
+        if not (v.startswith("http://") or v.startswith("https://")):
+
+            if "." not in v:
+                raise ValueError("Invalid URL format")
+        return v
 
 class ConsequenceStep(BaseModel):
     step: str
     description: str
     risk: str
 
-class ThreatAssessmentItem(BaseModel):
-    status: bool
-    details: str = ""
-
 class ScanReport(BaseModel):
     id: str
     url: str
     domain: str
-    trust_score: int = Field(ge=0, le=100)
+    trust_score: int
     risk_level: str
-    domain_age_days: Optional[int]
+    domain_age_days: int | None
     registrar: str
     https_enabled: bool
     suspicious_patterns: list[str]
     ghost_summary: str
-    ghost_summary_en: str
+    ghost_summary_en: str | None = None
     ai_explanation: str
     recommendations: list[str]
     consequences: list[ConsequenceStep]
     created_at: str
-    crawled_page_content: Optional[dict[str, Any]] = None
-    scorecard: Optional[dict[str, Any]] = None
-    threat_assessment: Optional[dict[str, Any]] = None
-
-class ScanRequest(BaseModel):
-    url: str = Field(min_length=1, max_length=MAX_URL_LENGTH)
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("URL cannot be empty.")
-        return normalized
-
-def get_cors_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-    return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
-
-app = FastAPI(title="GhostNet Backend", version="2.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_cors_origins(),
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "Authorization"],
-)
-
-supabase_client: Optional[Client] = None
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
-
-if supabase_url and supabase_key:
-    try:
-        supabase_client = create_client(supabase_url, supabase_key)
-    except Exception:
-        supabase_client = None
-
-in_memory_scans: list[dict[str, Any]] = []
-in_memory_lock = Lock()
-
-def store_in_memory(report: dict[str, Any]) -> None:
-    with in_memory_lock:
-        in_memory_scans.insert(0, report)
-        del in_memory_scans[HISTORY_LIMIT:]
-
-def build_storage_row(report: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": report["id"],
-        "url": report["url"],
-        "domain": report["domain"],
-        "trust_score": report["trust_score"],
-        "risk_level": report["risk_level"],
-        "domain_age_days": report["domain_age_days"],
-        "registrar": report["registrar"],
-        "https_enabled": report["https_enabled"],
-        "suspicious_patterns": report["suspicious_patterns"],
-        "ghost_summary": report["ghost_summary"],
-        "ghost_summary_en": report["ghost_summary_en"],
-        "ai_explanation": report["ai_explanation"],
-        "recommendations": report["recommendations"],
-        "consequences": report["consequences"],
-        "crawled_page_content": report.get("crawled_page_content"),
-        "scorecard": report.get("scorecard"),
-        "threat_assessment": report.get("threat_assessment"),
-        "created_at": report["created_at"],
-    }
-
-def row_to_report(row: dict[str, Any]) -> dict[str, Any]:
-    return ScanReport.model_validate(
-        {
-            "id": str(row.get("id")),
-            "url": row.get("url", ""),
-            "domain": row.get("domain", ""),
-            "trust_score": row.get("trust_score", 0),
-            "risk_level": row.get("risk_level", "Medium Risk"),
-            "domain_age_days": row.get("domain_age_days"),
-            "registrar": row.get("registrar") or "Unknown",
-            "https_enabled": bool(row.get("https_enabled")),
-            "suspicious_patterns": row.get("suspicious_patterns") or [],
-            "ghost_summary": row.get("ghost_summary") or "",
-            "ghost_summary_en": row.get("ghost_summary_en") or "",
-            "ai_explanation": row.get("ai_explanation") or "",
-            "recommendations": row.get("recommendations") or [],
-            "consequences": row.get("consequences") or [],
-            "created_at": row.get("created_at") or datetime.now(timezone.utc).isoformat(),
-            "crawled_page_content": row.get("crawled_page_content"),
-            "scorecard": row.get("scorecard"),
-            "threat_assessment": row.get("threat_assessment"),
-        }
-    ).model_dump()
-
-async def save_report(report: dict[str, Any]) -> None:
-    if not supabase_client:
-        store_in_memory(report)
-        return
-    try:
-        supabase_client.table("scans").insert(build_storage_row(report)).execute()
-    except Exception:
-        store_in_memory(report)
-
-@app.get("/", response_class=HTMLResponse)
-async def read_root() -> HTMLResponse:
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
-    if not os.path.isfile(template_path):
-        raise HTTPException(status_code=404, detail="GhostNet template is unavailable.")
-    with open(template_path, "r", encoding="utf-8") as template_file:
-        return HTMLResponse(content=template_file.read())
-
-@app.get("/health")
-async def health() -> dict[str, Any]:
-    return {"status": "ok", "database": "supabase" if supabase_client else "memory"}
+    crawled_page_content: dict | None = None
 
 @app.post("/api/scan", response_model=ScanReport)
-async def scan_website(request: ScanRequest) -> ScanReport:
+async def scan_website(request: ScanRequest):
+    input_url = request.url
+
+
     try:
-        analysis = await analyze_url(request.url)
-    except UnsafeTargetError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception:
-        raise HTTPException(status_code=502, detail="Website analysis failed before a report could be generated.")
+        analysis = await analyze_url(input_url)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Technical analysis failed: {str(e)}")
+
 
     try:
         ai_response = await get_ai_explanation(analysis)
-    except Exception:
-        ai_response = {}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
 
-    report = ScanReport(
-        id=str(uuid.uuid4()),
-        url=analysis["url"],
-        domain=analysis["domain"],
-        trust_score=int(ai_response.get("trust_score", analysis["base_trust_score"])),
-        risk_level=str(ai_response.get("risk_level", "Medium Risk")),
-        domain_age_days=analysis.get("domain_age_days"),
-        registrar=analysis.get("registrar", "Unknown"),
-        https_enabled=bool(analysis.get("https_enabled")),
-        suspicious_patterns=list(analysis.get("suspicious_patterns", [])),
-        ghost_summary=str(ai_response.get("ghost_summary", "")),
-        ghost_summary_en=str(ai_response.get("ghost_summary_en", "")),
-        ai_explanation=str(ai_response.get("ai_explanation", "")),
-        recommendations=list(ai_response.get("recommendations", [])),
-        consequences=[ConsequenceStep.model_validate(item) for item in ai_response.get("consequences", [])],
-        created_at=datetime.now(timezone.utc).isoformat(),
-        crawled_page_content=analysis.get("crawled_page_content"),
-        scorecard=analysis.get("scorecard"),
-        threat_assessment=ai_response.get("threat_assessment"),
-    )
-    await save_report(report.model_dump())
-    return report
 
-@app.get("/api/history", response_model=list[ScanReport])
-async def get_history() -> list[ScanReport]:
+    report_id = str(uuid.uuid4())
+    created_at_str = datetime.now(timezone.utc).isoformat()
+
+    report_data = {
+        "id": report_id,
+        "url": analysis["url"],
+        "domain": analysis["domain"],
+        "trust_score": ai_response.get("trust_score", analysis["base_trust_score"]),
+        "risk_level": ai_response.get("risk_level", "Medium Risk"),
+        "domain_age_days": analysis["domain_age_days"],
+        "registrar": analysis["registrar"],
+        "https_enabled": analysis["https_enabled"],
+        "suspicious_patterns": analysis["suspicious_patterns"],
+        "ghost_summary": ai_response.get("ghost_summary", ""),
+        "ghost_summary_en": ai_response.get("ghost_summary_en", ""),
+        "ai_explanation": ai_response.get("ai_explanation", ""),
+        "recommendations": ai_response.get("recommendations", []),
+        "consequences": ai_response.get("consequences", []),
+        "created_at": created_at_str,
+        "crawled_page_content": analysis.get("crawled_page_content")
+    }
+
+
     if supabase_client:
         try:
-            response = (
-                supabase_client.table("scans")
-                .select("*")
-                .order("created_at", desc=True)
-                .limit(HISTORY_LIMIT)
-                .execute()
-            )
-            return [ScanReport.model_validate(row_to_report(row)) for row in (response.data or [])]
-        except Exception:
-            pass
-    with in_memory_lock:
-        return [ScanReport.model_validate(item) for item in in_memory_scans[:HISTORY_LIMIT]]
 
-@app.middleware("http")
-async def request_size_limit(request: Request, call_next):
-    content_length = request.headers.get("content-length")
-    if content_length:
+            supabase_client.table("scans").insert({
+                "id": report_data["id"],
+                "url": report_data["url"],
+                "domain": report_data["domain"],
+                "trust_score": report_data["trust_score"],
+                "risk_level": report_data["risk_level"],
+                "domain_age_days": report_data["domain_age_days"],
+                "registrar": report_data["registrar"],
+                "https_enabled": report_data["https_enabled"],
+                "suspicious_patterns": report_data["suspicious_patterns"],
+                "ghost_summary": report_data["ghost_summary"],
+                "ghost_summary_en": report_data["ghost_summary_en"],
+                "ai_explanation": report_data["ai_explanation"],
+                "recommendations": report_data["recommendations"],
+                "consequences": report_data["consequences"]
+            }).execute()
+        except Exception as e:
+
+            try:
+                supabase_client.table("scans").insert({
+                    "id": report_data["id"],
+                    "url": report_data["url"],
+                    "domain": report_data["domain"],
+                    "trust_score": report_data["trust_score"],
+                    "risk_level": report_data["risk_level"],
+                    "domain_age_days": report_data["domain_age_days"],
+                    "registrar": report_data["registrar"],
+                    "https_enabled": report_data["https_enabled"],
+                    "suspicious_patterns": report_data["suspicious_patterns"],
+                    "ghost_summary": report_data["ghost_summary"],
+                    "ai_explanation": report_data["ai_explanation"],
+                    "recommendations": report_data["recommendations"],
+                    "consequences": report_data["consequences"]
+                }).execute()
+            except Exception as e_inner:
+                print(f"Supabase completely failed: {str(e_inner)}. Appending to in-memory fallback.")
+                in_memory_scans.append(report_data)
+    else:
+        in_memory_scans.append(report_data)
+
+    return report_data
+
+@app.get("/api/history", response_model=List[ScanReport])
+async def get_history():
+
+    history_records = []
+
+    if supabase_client:
         try:
-            if int(content_length) > 32_768:
-                return HTMLResponse(content="Request body too large.", status_code=413)
-        except ValueError:
-            return HTMLResponse(content="Invalid content length.", status_code=400)
-    return await call_next(request)
+            response = supabase_client.table("scans").select("*").order("created_at", desc=True).limit(20).execute()
+            data_rows = response.data or []
+
+            for row in data_rows:
+
+                history_records.append({
+                    "id": str(row["id"]),
+                    "url": row["url"],
+                    "domain": row["domain"],
+                    "trust_score": row["trust_score"],
+                    "risk_level": row["risk_level"],
+                    "domain_age_days": row["domain_age_days"],
+                    "registrar": row["registrar"],
+                    "https_enabled": row["https_enabled"],
+                    "suspicious_patterns": row.get("suspicious_patterns") or [],
+                    "ghost_summary": row["ghost_summary"],
+                    "ghost_summary_en": row.get("ghost_summary_en", ""),
+                    "ai_explanation": row["ai_explanation"],
+                    "recommendations": row.get("recommendations") or [],
+                    "consequences": row.get("consequences") or [],
+                    "created_at": row["created_at"],
+                    "crawled_page_content": row.get("crawled_page_content")
+                })
+        except Exception as e:
+            print(f"Supabase read failed: {str(e)}. Using in-memory fallback.")
+            history_records = in_memory_scans.copy()
+    else:
+        history_records = in_memory_scans.copy()
+
+
+    history_records.sort(key=lambda x: x["created_at"], reverse=True)
+    return history_records[:20]
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=int(os.getenv("PORT", "8000")))
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
