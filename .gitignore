@@ -31,9 +31,6 @@ node_modules/
 .eslintcache
 .clear
 .npm
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
 
 # Environments / Sensitive data
 .env
