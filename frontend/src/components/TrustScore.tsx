@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface TrustScoreProps {
   score: number;
@@ -7,18 +7,17 @@ interface TrustScoreProps {
   strokeWidth?: number;
 }
 
-export const TrustScore: React.FC<TrustScoreProps> = ({
+export const TrustScore = ({
   score,
   riskLevel,
   size = 180,
-  strokeWidth = 14
-}) => {
+  strokeWidth = 14,
+}: TrustScoreProps) => {
   const [animatedScore, setAnimatedScore] = useState(0);
   
-  // Count-up effect on score change
   useEffect(() => {
     setAnimatedScore(0);
-    const duration = 1200; // ms
+    const duration = 1200;
     const startTime = performance.now();
     
     let animationFrameId: number;
@@ -27,7 +26,6 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
       const elapsedTime = currentTime - startTime;
       const progress = Math.min(elapsedTime / duration, 1);
       
-      // Easing function (easeOutQuad)
       const easeProgress = progress * (2 - progress);
       const currentVal = Math.round(easeProgress * score);
       
@@ -42,36 +40,34 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
     return () => cancelAnimationFrame(animationFrameId);
   }, [score]);
 
-  // Determine indicator color based on score/risk
-  let color = '#EF4444'; // default danger red
+  let color = '#EF4444';
   let shadowGlow = 'rgba(239, 68, 68, 0.3)';
 
   if (score >= 80) {
-    color = '#22C55E'; // Success green
+    color = '#22C55E';
     shadowGlow = 'rgba(34, 197, 94, 0.3)';
   } else if (score >= 60) {
-    color = '#3B82F6'; // Info blue
+    color = '#3B82F6';
     shadowGlow = 'rgba(59, 130, 246, 0.3)';
   } else if (score >= 40) {
-    color = '#F59E0B'; // Warning yellow/orange
+    color = '#F59E0B';
     shadowGlow = 'rgba(245, 158, 11, 0.3)';
   }
 
-  // Calculate SVG circular parameters
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (animatedScore / 100) * circumference;
 
   return (
     <div className="relative flex flex-col items-center justify-center" style={{ width: size, height: size }}>
-      {/* Outer shadow glow */}
+      
       <div 
         className="absolute inset-2 rounded-full blur-xl transition-all duration-700 opacity-20"
         style={{ background: color }}
       />
       
       <svg width={size} height={size} className="transform -rotate-90">
-        {/* Background Circle */}
+        
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -80,7 +76,7 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
           stroke="#18181b"
           strokeWidth={strokeWidth}
         />
-        {/* Animated Progress Circle */}
+        
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -97,7 +93,7 @@ export const TrustScore: React.FC<TrustScoreProps> = ({
         />
       </svg>
       
-      {/* Inner Label Container */}
+      
       <div className="absolute flex flex-col items-center justify-center text-center">
         <span 
           className="text-4xl md:text-5xl font-bold font-mono tracking-tight transition-all"

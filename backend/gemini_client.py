@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import json
 import os
-import google.generativeai as genai
 from typing import Optional
+
+import google.generativeai as genai
 
 def format_age(days: Optional[int]) -> str:
     """Helper to convert domain age in days to a human-readable string."""
@@ -18,7 +21,7 @@ def format_age(days: Optional[int]) -> str:
         return f"{years} year{'s' if years != 1 else ''} and {remaining_months} month{'s' if remaining_months != 1 else ''} ago"
     return f"{years} year{'s' if years != 1 else ''} ago"
 
-# Fallback generator in case Gemini is offline or API key is not configured
+
 def generate_fallback_analysis(data: dict) -> dict:
     domain = data.get("domain", "this website")
     https_enabled = data.get("https_enabled", False)
@@ -26,8 +29,8 @@ def generate_fallback_analysis(data: dict) -> dict:
     patterns = data.get("suspicious_patterns", [])
     base_score = data.get("base_trust_score", 50)
     registrar = data.get("registrar", "Unknown")
-    
-    # 1. Registration age description (Hindi and English)
+
+
     if domain_age_days is not None:
         if domain_age_days < 30:
             age_phrase = f"बिल्कुल नया है, यह सिर्फ {domain_age_days} दिन पहले रजिस्टर हुआ है"
@@ -49,7 +52,7 @@ def generate_fallback_analysis(data: dict) -> dict:
         age_phrase = "के रजिस्ट्रेशन की उम्र की जानकारी सत्यापित नहीं है"
         age_phrase_en = "has unverified registration age information"
 
-    # 2. Registrar description
+
     if registrar and registrar != "Unknown":
         registrar_phrase = f"और इसे {registrar} के माध्यम से रजिस्टर किया गया है"
         registrar_phrase_en = f"registered through {registrar}"
@@ -57,7 +60,7 @@ def generate_fallback_analysis(data: dict) -> dict:
         registrar_phrase = "और यह किसी असत्यापित रजिस्ट्रार से रजिस्टर हुआ है"
         registrar_phrase_en = "registered through an unverified registrar"
 
-    # 3. Connection security description
+
     if https_enabled:
         https_phrase = "सुरक्षित HTTPS प्रोटोकॉल का उपयोग करता है और SSL वैध है"
         https_phrase_en = "uses active HTTPS encryption with a valid SSL certificate to protect your data in transit"
@@ -65,7 +68,7 @@ def generate_fallback_analysis(data: dict) -> dict:
         https_phrase = "HTTPS का समर्थन नहीं करता है, जो कनेक्शन सुरक्षा के लिए जोखिम भरा है"
         https_phrase_en = "lacks secure HTTPS encryption, which means any information you enter is sent in plain text and is highly vulnerable to interception"
 
-    # 4. Pattern alerts description
+
     if patterns:
         patterns_phrase = f"मुझे स्कैन में कुछ विशिष्ट चेतावनियां मिली हैं: {', '.join(patterns)}।"
         patterns_phrase_en = f"I flagged multiple warnings, specifically: {', '.join(patterns)}."
@@ -76,7 +79,7 @@ def generate_fallback_analysis(data: dict) -> dict:
     crawled = data.get("crawled_page_content", {})
     has_pwd = crawled.get("has_password_field", False)
     ext_scripts = crawled.get("external_scripts", [])
-    
+
     dom_phrase = ""
     dom_phrase_en = ""
     if has_pwd:
@@ -89,7 +92,7 @@ def generate_fallback_analysis(data: dict) -> dict:
         dom_phrase = f" नोट: यह पेज बाहरी डोमेन से स्क्रिप्ट लेता है: {', '.join(ext_scripts[:2])}।"
         dom_phrase_en = f" Note: the page loads external scripts from: {', '.join(ext_scripts[:2])}."
 
-    # Determine risk level and compile the detailed summary & recommendations
+
     if base_score >= 85:
         risk_level = "Safe"
         summary = (
@@ -181,11 +184,11 @@ def generate_fallback_analysis(data: dict) -> dict:
             "Do not call any support numbers or click on safety alerts displayed on the site."
         ]
 
-    # Construct consequences dynamically based on URL, domain, patterns and trust score
+
     consequences = []
     url = data.get("url", "")
-    
-    # Step 1: Accessing
+
+
     step1_title = f"1. Access {domain}"
     if base_score >= 70:
         step1_desc = f"You open {domain} in your browser over a " + ("secure, HTTPS-encrypted connection." if https_enabled else "connection lacking HTTPS protection.")
@@ -194,8 +197,8 @@ def generate_fallback_analysis(data: dict) -> dict:
         step1_desc = f"You navigate to {domain}. " + ("Although HTTPS is active, the target server's identity is suspicious." if https_enabled else "The connection lacks HTTPS encryption, meaning data sent here can be intercepted.")
         step1_risk = "Danger" if base_score < 45 else "Warning"
     consequences.append({"step": step1_title, "description": step1_desc, "risk": step1_risk})
-    
-    # Step 2: Analysis / Inspection
+
+
     step2_title = f"2. GhostNet Analysis"
     if patterns:
         step2_desc = f"Heuristics flagged issues on {domain}: {', '.join(patterns[:2])}. This indicates the domain mimics trusted brands or uses suspicious patterns."
@@ -210,8 +213,8 @@ def generate_fallback_analysis(data: dict) -> dict:
         step2_desc = f"The domain {domain} is well-established (registered {domain_age_days} days ago with {registrar}), indicating a stable presence."
         step2_risk = "Safe"
     consequences.append({"step": step2_title, "description": step2_desc, "risk": step2_risk})
-    
-    # Step 3: Interaction / Input
+
+
     step3_title = f"3. User Interaction"
     if base_score >= 70:
         step3_desc = f"You log in or share information with {domain}. Your data is safely encrypted and sent to a reputable recipient."
@@ -225,8 +228,8 @@ def generate_fallback_analysis(data: dict) -> dict:
             step3_desc = f"You click elements, browse files, or potentially download resources from the unverified page on {domain}."
         step3_risk = "Danger" if base_score < 45 else "Warning"
     consequences.append({"step": step3_title, "description": step3_desc, "risk": step3_risk})
-    
-    # Step 4: Outcome / Impact
+
+
     if base_score >= 85:
         step4_title = "4. Secure Session"
         step4_desc = f"Your connection to {domain} remains secure and private. Your data is protected, and no threats were executed."
@@ -251,33 +254,33 @@ def generate_fallback_analysis(data: dict) -> dict:
             step4_desc = f"Your login credentials are sent securely—but directly to the operators of the suspicious site {domain}, compromising your account."
             step4_risk = "Critical"
         consequences.append({"step": step4_title, "description": step4_desc, "risk": step4_risk})
-        
+
         if base_score < 25:
             step5_title = "5. Identity Theft"
             step5_desc = f"Attackers utilize the captured credentials to lock you out of actual accounts, or run scripts to hijack your local browser cookies."
             step5_risk = "Critical"
             consequences.append({"step": step5_title, "description": step5_desc, "risk": step5_risk})
-        
+
     is_brand = bool(patterns and any("typosquatting" in p.lower() for p in patterns))
     brand_details = f"Impersonates a known brand: {next((p for p in patterns if 'typosquatting' in p.lower()), '')}" if is_brand else "No brand impersonation detected."
-    
+
     has_card = crawled.get("has_card_field", False)
-    
+
     resembles_phish = bool(base_score < 70 and (has_pwd or has_card or len(patterns) > 1))
     phish_details = "Contains high-risk form inputs or multiple warning flags typical of phishing templates." if resembles_phish else "Does not exhibit typical phishing layouts."
-    
+
     unusually_new = bool(domain_age_days is not None and domain_age_days < 90)
     new_details = f"The domain is only {domain_age_days} days old." if unusually_new else (f"The domain is mature ({domain_age_days} days old)." if domain_age_days else "Domain registration age is unverified.")
-    
+
     requests_sensitive = bool(has_pwd or has_card)
     sensitive_details = "Requests login credentials or payment card details." if requests_sensitive else "No forms requesting sensitive input found."
-    
+
     multiple_warnings = bool(len(patterns) >= 3)
     warnings_details = f"Compounded risk with {len(patterns)} warning flags." if multiple_warnings else f"Only {len(patterns)} warning flags active."
-    
+
     confidence = "High" if domain_age_days is not None else "Medium"
     confidence_details = "High confidence assessment based on active WHOIS/RDAP registrar data and SSL check." if domain_age_days is not None else "Medium confidence assessment; domain age records could not be verified."
-    
+
     threat_assessment = {
         "is_brand_impersonation": {"status": is_brand, "details": brand_details},
         "resembles_phishing": {"status": resembles_phish, "details": phish_details},
@@ -306,11 +309,11 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
     if not api_key:
         print("Gemini API Key missing. Falling back to local rule-based analysis.")
         return generate_fallback_analysis(analysis_data)
-        
+
     try:
         genai.configure(api_key=api_key)
-        
-        # System instructions to ground the AI as "Ghost"
+
+
         system_instruction = (
             "You are Ghost, the friendly and professional digital guardian of GhostNet, "
             "an AI-powered cybersecurity assistant. Your job is to analyze website scan reports, "
@@ -330,11 +333,11 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
             "Keep the language clean, trustworthy, and modern. Ensure that 'recommendations' are written strictly in standard English.\n"
             "You MUST output your response in valid JSON matching the exact schema specified below."
         )
-        
-        # Define expected output format
+
+
         prompt = f"""
         Analyze the following URL security statistics, 5-pillar security scorecard, and webpage crawler findings to generate a friendly, detailed response.
-        
+
         URL Statistics:
         - URL: {analysis_data['url']}
         - Domain: {analysis_data['domain']}
@@ -344,7 +347,7 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
         - Registrar: {analysis_data['registrar']}
         - Suspicious URL Heuristics Triggered: {analysis_data['suspicious_patterns']}
         - System Baseline Trust Score (0-100): {analysis_data['base_trust_score']}
-        
+
         Security Scorecard:
         - Domain Score (max 25): {analysis_data.get('scorecard', {}).get('domain_score')}
         - SSL Score (max 20): {analysis_data.get('scorecard', {}).get('ssl_score')}
@@ -353,7 +356,7 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
         - Scripts Score (max 15): {analysis_data.get('scorecard', {}).get('scripts_score')}
         - SSL Cert Issuer: {analysis_data.get('scorecard', {}).get('ssl_issuer')}
         - Security Headers Active: {analysis_data.get('scorecard', {}).get('security_headers')}
-        
+
         Webpage Crawler & DOM Inspector Findings:
         - Page Title: {analysis_data.get('crawled_page_content', {}).get('title', 'Unknown')}
         - Headings Found: {analysis_data.get('crawled_page_content', {}).get('headings', [])}
@@ -367,7 +370,7 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
         - Inline Scripts Count: {analysis_data.get('crawled_page_content', {}).get('inline_scripts_count', 0)}
         - Inline Scripts Total Bytes: {analysis_data.get('crawled_page_content', {}).get('inline_scripts_length', 0)}
         - Page Metadata: {analysis_data.get('crawled_page_content', {}).get('metadata', {})}
-        
+
         Return a JSON object with the following fields:
         1. "trust_score": An integer (0-100) refining the baseline score if appropriate based on your security assessment.
         2. "risk_level": String, one of: "Safe", "Low Risk", "Medium Risk", "High Risk", "Critical".
@@ -386,7 +389,7 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
            - "requests_sensitive_info": {{"status": boolean, "details": "explanation of form inputs request safety"}}
            - "multiple_warnings": {{"status": boolean, "details": "explanation of compounded risk signs presence"}}
            - "confidence_level": {{"level": "Low" or "Medium" or "High", "details": "explanation of security scan confidence"}}
-            
+
         Example output format:
         {{
             "trust_score": 98,
@@ -410,24 +413,24 @@ async def get_ai_explanation(analysis_data: dict) -> dict:
             }}
         }}
         """
-        
+
         model = genai.GenerativeModel(
             model_name="gemini-2.0-flash",
             system_instruction=system_instruction,
             generation_config={"response_mime_type": "application/json"}
         )
-        
+
         response = model.generate_content(prompt)
         result = json.loads(response.text)
-        
-        # Post-validation of the model's structure
+
+
         required_keys = ["trust_score", "risk_level", "ghost_summary", "ghost_summary_en", "ai_explanation", "recommendations", "consequences", "threat_assessment"]
         if all(key in result for key in required_keys):
             return result
         else:
             print("Gemini response missing keys, using fallback generator.")
             return generate_fallback_analysis(analysis_data)
-            
+
     except Exception as e:
         print(f"Gemini API invocation failed: {str(e)}. Using fallback analyzer.")
         return generate_fallback_analysis(analysis_data)

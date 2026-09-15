@@ -1,24 +1,24 @@
-import React, { useState, useEffect } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import axios from 'axios';
-import { 
-  ShieldAlert, 
-  ShieldCheck, 
-  Search, 
-  History, 
-  ExternalLink, 
-  Globe, 
-  Calendar, 
-  Lock, 
-  Unlock, 
-  AlertTriangle, 
-  CheckCircle2, 
-  ChevronRight, 
+import {
+  AlertTriangle,
   ArrowLeft,
+  Calendar,
+  CheckCircle2,
+  ChevronRight,
+  Cpu,
+  ExternalLink,
+  Fingerprint,
+  Globe,
+  History,
+  Lock,
+  Search,
   Server,
+  ShieldAlert,
+  ShieldCheck,
+  Unlock,
   Volume2,
   VolumeX,
-  Cpu,
-  Fingerprint
 } from 'lucide-react';
 import GhostCharacter from './components/GhostCharacter';
 import TrustScore from './components/TrustScore';
@@ -109,7 +109,6 @@ export default function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechLang, setSpeechLang] = useState<'en' | 'hi'>('hi');
 
-  // Dynamic formatting for website age
   const formatDomainAge = (days: number | null | undefined) => {
     if (days === null || days === undefined) return "Unknown";
     if (days < 30) return `${days} day${days === 1 ? '' : 's'} old`;
@@ -125,7 +124,6 @@ export default function App() {
     return `${years} year${years === 1 ? '' : 's'} old`;
   };
 
-  // Voice synthesis toggle controller
   const toggleSpeech = (lang?: 'en' | 'hi') => {
     if ('speechSynthesis' in window) {
       const targetLang = lang || speechLang;
@@ -170,7 +168,6 @@ export default function App() {
     }
   };
 
-  // Auto-speak summary when results dashboard is mounted
   useEffect(() => {
     if (status === 'results' && scanResult?.ghost_summary) {
       const timer = setTimeout(() => {
@@ -218,7 +215,6 @@ export default function App() {
     }
   }, [status, scanResult, speechLang]);
 
-  // Load history on mount
   useEffect(() => {
     fetchHistory();
   }, []);
@@ -243,7 +239,6 @@ export default function App() {
     const cached = localStorage.getItem('ghostnet_scans');
     let cacheList: ScanReport[] = cached ? JSON.parse(cached) : [];
     
-    // Check if duplicate exists
     if (!cacheList.some(item => item.id === newReport.id)) {
       cacheList = [newReport, ...cacheList].slice(0, 20);
       localStorage.setItem('ghostnet_scans', JSON.stringify(cacheList));
@@ -251,16 +246,14 @@ export default function App() {
     }
   };
 
-  const handleScan = async (e: React.FormEvent) => {
+  const handleScan = async (e: FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
 
-    // Transition to scanning loading screen
     setStatus('scanning');
     setScanStepIndex(0);
     setErrorMessage('');
     
-    // Start step subtitle intervals
     const stepInterval = setInterval(() => {
       setScanStepIndex(prev => {
         if (prev < SCAN_STEPS.length - 1) {
@@ -276,12 +269,11 @@ export default function App() {
       const response = await axios.post('/api/scan', { url });
       const data: ScanReport = response.data;
       
-      // Allow the scanning sequence to complete to 100% for immersive experience
       setTimeout(() => {
         setScanResult(data);
         setStatus('results');
         saveToLocalStorage(data);
-        fetchHistory(); // sync with database
+        fetchHistory();
       }, 3500);
 
     } catch (err: any) {
@@ -339,10 +331,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col font-sans">
-      {/* Background radial effects */}
+      
       <div className="absolute top-0 left-0 right-0 h-[500px] bg-gradient-to-b from-purple-900/5 to-transparent pointer-events-none z-0" />
       
-      {/* Header */}
+      
       <header className="relative z-10 border-b border-zinc-900 bg-black/70 backdrop-blur-md px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2 cursor-pointer" onClick={handleBackToLanding}>
           <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-purple-600 to-blue-500 flex items-center justify-center font-bold text-white shadow-lg">
@@ -370,19 +362,19 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Body */}
+      
       <main className="flex-1 relative z-10 flex flex-col px-4 md:px-8 py-10 max-w-6xl w-full mx-auto justify-center">
         
-        {/* LANDING PAGE */}
+        
         {status === 'landing' && (
           <div className="flex flex-col items-center justify-center text-center mt-4">
             
-            {/* Animated Floating Ghost Header */}
+            
             <div className="mb-6 flex justify-center">
               <GhostCharacter state="idle" size={130} />
             </div>
 
-            {/* Title / Hero */}
+            
             <div className="max-w-2xl">
               <h2 className="text-4xl md:text-6xl font-bold font-heading tracking-tight leading-tight">
                 The Ghost That <span className="bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">Browses Before You</span>
@@ -392,7 +384,7 @@ export default function App() {
               </p>
             </div>
 
-            {/* Input URL Search Form */}
+            
             <form onSubmit={handleScan} className="w-full max-w-xl mt-10">
               <div className="glass-panel p-2 rounded-2xl flex items-center gap-2 focus-within:border-purple-500/50 transition-all duration-300">
                 <div className="pl-3 text-slate-500">
@@ -415,7 +407,7 @@ export default function App() {
               </div>
             </form>
 
-            {/* Fast/Easy Scan Examples */}
+            
             <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4 text-xs text-slate-500">
               <span>Quick tests:</span>
               <button 
@@ -440,7 +432,7 @@ export default function App() {
                 Unencrypted URL
               </button>
             </div>
-            {/* How it Works / Behind the Veil */}
+            
             <div className="w-full max-w-4xl mt-20 border-t border-zinc-900 pt-10 text-left">
               <h3 className="text-sm font-semibold tracking-widest text-slate-400 uppercase flex items-center justify-center gap-2 mb-8 text-center">
                 Behind the Veil: How GhostNet Scans
@@ -496,7 +488,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* SCAN HISTORY TABLE */}
+            
             <div className="w-full max-w-4xl mt-20 border-t border-zinc-900 pt-10">
               <h3 className="text-sm font-semibold tracking-widest text-slate-400 uppercase flex items-center justify-center gap-2 mb-6">
                 <History className="w-4 h-4" />
@@ -542,24 +534,24 @@ export default function App() {
           </div>
         )}
 
-        {/* SCANNING LOADING SCREEN */}
+        
         {status === 'scanning' && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             
-            {/* Pulsing Active Scanning Ghost */}
+            
             <div className="relative mb-8">
               <div className="absolute inset-0 w-24 h-24 bg-blue-500/20 rounded-full blur-xl animate-pulse" />
               <GhostCharacter state="scanning" size={140} />
             </div>
 
-            {/* Stepper Text */}
+            
             <div className="h-6 overflow-hidden">
               <span className="text-slate-200 text-sm font-semibold tracking-wide animate-pulse">
                 {SCAN_STEPS[scanStepIndex]}
               </span>
             </div>
 
-            {/* Stepper Visual indicators */}
+            
             <div className="flex items-center gap-2.5 mt-6">
               {SCAN_STEPS.map((_, idx) => (
                 <div 
@@ -581,7 +573,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ERROR SCREEN */}
+        
         {status === 'error' && (
           <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
             <div className="w-16 h-16 rounded-full bg-red-950/30 border border-red-500/30 flex items-center justify-center text-red-500 mb-6 shadow-lg shadow-red-950/20">
@@ -603,11 +595,11 @@ export default function App() {
           </div>
         )}
 
-        {/* REPORT RESULTS DASHBOARD */}
+        
         {status === 'results' && scanResult && (
           <div className="space-y-6">
             
-            {/* Navigation / URL Info Panel */}
+            
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-900 pb-6">
               <div className="flex items-center gap-3">
                 <button 
@@ -651,10 +643,10 @@ export default function App() {
               </a>
             </div>
 
-            {/* Dashboard grid */}
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {/* Row 1 Left: Trust Score Gauge */}
+              
               <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-center text-center bg-black/40">
                 <TrustScore score={scanResult.trust_score} riskLevel={scanResult.risk_level} />
                 
@@ -683,18 +675,18 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Row 1 Middle & Right: Ghost AI Explanation */}
+              
               <div className="glass-panel p-6 rounded-2xl md:col-span-2 flex flex-col justify-between border-purple-500/10 bg-gradient-to-br from-zinc-950/60 to-black/10 relative overflow-hidden">
-                {/* Background light glow */}
+                
                 <div className="absolute -top-12 -right-12 w-48 h-48 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
                 
-                {/* Ghost Character Speech Bubble Header */}
+                
                 <div className="flex items-start gap-4">
                   <div className="shrink-0 scale-90">
                     <GhostCharacter state={getGhostState(scanResult.risk_level)} size={80} />
                   </div>
                   
-                  {/* Chat bubble body */}
+                  
                   <div className="bg-zinc-950/60 border border-zinc-900/80 p-4 rounded-2xl relative flex-1">
                     <div className="absolute top-4 -left-2 w-3.5 h-3.5 bg-zinc-950 border-l border-b border-zinc-900/80 transform rotate-45" />
                     
@@ -707,7 +699,6 @@ export default function App() {
                               setIsSpeaking(false);
                             }
                             setSpeechLang('hi');
-                            // Trigger speech synthesis
                             setTimeout(() => toggleSpeech('hi'), 50);
                           }}
                           className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase transition-all cursor-pointer ${
@@ -725,7 +716,6 @@ export default function App() {
                               setIsSpeaking(false);
                             }
                             setSpeechLang('en');
-                            // Trigger speech synthesis
                             setTimeout(() => toggleSpeech('en'), 50);
                           }}
                           className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase transition-all cursor-pointer ${
@@ -757,7 +747,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Main AI Explanation */}
+                
                 <div className="mt-6 border-t border-zinc-900 pt-5">
                   <h3 className="text-sm font-semibold text-slate-200 tracking-wide">
                     AI Diagnostic Analysis
@@ -770,10 +760,10 @@ export default function App() {
 
             </div>
 
-            {/* Row 2: Diagnostics Cards */}
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               
-              {/* Card A: Domain Age info */}
+              
               <div className="glass-panel p-5 rounded-xl bg-zinc-950/30 space-y-4">
                 <h4 className="text-xs uppercase font-bold text-slate-400 tracking-widest flex items-center gap-1.5 border-b border-zinc-900 pb-2">
                   <Calendar className="w-4 h-4 text-purple-400" />
@@ -812,7 +802,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Card B: Connection Security */}
+              
               <div className="glass-panel p-5 rounded-xl bg-zinc-950/30 space-y-4">
                 <h4 className="text-xs uppercase font-bold text-slate-400 tracking-widest flex items-center gap-1.5 border-b border-zinc-900 pb-2">
                   <Lock className="w-4 h-4 text-blue-400" />
@@ -880,7 +870,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Card C: Pattern Analysis flags */}
+              
               <div className="glass-panel p-5 rounded-xl bg-zinc-950/30 space-y-4">
                 <h4 className="text-xs uppercase font-bold text-slate-400 tracking-widest flex items-center gap-1.5 border-b border-zinc-900 pb-2">
                   <Server className="w-4 h-4 text-amber-400" />
@@ -906,10 +896,7 @@ export default function App() {
 
             </div>
 
-
-
-
-            {/* Row 2.5: Deep Threat Signals & Evidence Card */}
+            
             {scanResult.scorecard && (
               <div className="glass-panel p-6 rounded-2xl bg-black/60 space-y-6">
                 <div className="flex items-center justify-between border-b border-zinc-900 pb-3">
@@ -928,12 +915,12 @@ export default function App() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Left: The 5 pillars progress bars */}
+                  
                   <div className="space-y-4">
                     <h4 className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">5-Pillar Heuristics Breakdown</h4>
                     
                     <div className="space-y-3">
-                      {/* Domain Identity */}
+                      
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs font-semibold text-slate-300">
                           <span>Domain Identity & Age</span>
@@ -944,7 +931,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* SSL Connection */}
+                      
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs font-semibold text-slate-300">
                           <span>SSL Connection & TLS</span>
@@ -956,7 +943,7 @@ export default function App() {
                         <div className="text-[10px] text-slate-500 font-mono">Issuer: {scanResult.scorecard.ssl_issuer}</div>
                       </div>
 
-                      {/* DOM Safety */}
+                      
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs font-semibold text-slate-300">
                           <span>DOM & Form Safety</span>
@@ -974,7 +961,7 @@ export default function App() {
                         )}
                       </div>
 
-                      {/* Security Headers */}
+                      
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs font-semibold text-slate-300">
                           <span>HTTP Security Headers</span>
@@ -985,7 +972,7 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Scripts & Redirects */}
+                      
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs font-semibold text-slate-300">
                           <span>Scripts & Redirects</span>
@@ -998,7 +985,7 @@ export default function App() {
                     </div>
                   </div>
                   
-                  {/* Right: Headers Checklist & Threat Assessment QA */}
+                  
                   <div className="space-y-4">
                     <div>
                       <h4 className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-2">HTTP Security Headers</h4>
@@ -1064,13 +1051,13 @@ export default function App() {
               </div>
             )}
 
-            {/* Row 3: Consequence Visualizer (Signature Feature) */}
+            
             <ConsequenceVisualizer 
               consequences={scanResult.consequences} 
               riskLevel={scanResult.risk_level} 
             />
 
-            {/* Row 4: Recommendations */}
+            
             <div className="glass-panel p-6 rounded-2xl bg-black/60 space-y-4">
               <h3 className="text-sm font-semibold text-slate-100">
                 Guardian Action Plan
@@ -1099,7 +1086,7 @@ export default function App() {
 
       </main>
 
-      {/* Footer */}
+      
       <footer className="relative z-10 border-t border-zinc-900 bg-black/70 py-6 text-center text-[10px] text-slate-500 font-semibold tracking-wider uppercase mt-12">
         👻 GhostNet — The Ghost That Browses Before You.
       </footer>

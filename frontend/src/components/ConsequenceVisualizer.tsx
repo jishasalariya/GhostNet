@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ShieldAlert, ShieldCheck, Play, RotateCcw } from 'lucide-react';
 
 interface ConsequenceStep {
@@ -12,18 +12,17 @@ interface ConsequenceVisualizerProps {
   riskLevel: string;
 }
 
-export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
+export const ConsequenceVisualizer = ({
   consequences,
-  riskLevel
-}) => {
-  const [activeStep, setActiveStep] = useState<number>(0);
-  const [simulationRunning, setSimulationRunning] = useState<boolean>(false);
+  riskLevel,
+}: ConsequenceVisualizerProps) => {
+  const [activeStep, setActiveStep] = useState(0);
+  const [simulationRunning, setSimulationRunning] = useState(false);
 
   const resetSimulation = () => {
     setActiveStep(0);
     setSimulationRunning(false);
   };
-
 
   const runSimulation = () => {
     resetSimulation();
@@ -38,7 +37,7 @@ export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
         clearInterval(interval);
         setSimulationRunning(false);
       }
-    }, 1800); // 1.8s per step
+    }, 1800);
   };
 
   const getRiskStyles = (risk: string, isActive: boolean) => {
@@ -93,7 +92,7 @@ export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
           </p>
         </div>
         
-        {/* Simulation Buttons */}
+        
         <div className="flex items-center gap-2">
           {!simulationRunning && activeStep > 0 ? (
             <button 
@@ -122,9 +121,9 @@ export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
         </div>
       </div>
 
-      {/* Interactive Visualizer Steps */}
+      
       <div className="relative pl-8 md:pl-0 md:grid md:grid-cols-4 gap-4">
-        {/* Connection Line (Desktop) */}
+        
         <div className="hidden md:block absolute top-[18px] left-[12%] right-[12%] h-0.5 bg-zinc-800 z-0">
           <div 
             className={`h-full transition-all duration-700 ${isMalicious ? 'bg-red-500/50' : 'bg-green-500/50'}`}
@@ -132,7 +131,7 @@ export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
           />
         </div>
         
-        {/* Connection Line (Mobile) */}
+        
         <div className="md:hidden absolute top-4 bottom-4 left-[14px] w-0.5 bg-zinc-800 z-0">
           <div 
             className={`w-full transition-all duration-700 ${isMalicious ? 'bg-red-500/50' : 'bg-green-500/50'}`}
@@ -153,14 +152,14 @@ export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
                 isCurrent ? 'scale-103 shadow-lg' : 'hover:bg-zinc-900/20'
               }`}
             >
-              {/* Step indicator dot */}
+              
               <div 
                 className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-slate-100 mb-3 transition-all duration-500 ${styles.dotClass}`}
               >
                 {index + 1}
               </div>
 
-              {/* Title & Badge */}
+              
               <div className="flex items-center gap-1.5 md:flex-col mt-1">
                 <span className={`text-sm font-semibold tracking-wide transition-colors duration-500 ${isActive ? 'text-slate-100' : 'text-slate-500'}`}>
                   {c.step.replace(/^\d+\.\s*/, '')}
@@ -181,7 +180,7 @@ export const ConsequenceVisualizer: React.FC<ConsequenceVisualizerProps> = ({
                 )}
               </div>
 
-              {/* Description */}
+              
               <p className={`text-xs mt-2 transition-all duration-500 line-clamp-3 md:line-clamp-none ${
                 isActive ? 'text-slate-300' : 'text-slate-600'
               }`}>
