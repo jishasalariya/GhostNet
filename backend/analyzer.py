@@ -1,13 +1,16 @@
-import re
-import urllib.parse
+from __future__ import annotations
+
 import asyncio
+import re
+import socket
+import ssl
+import urllib.parse
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Dict, List, Optional
+
 import httpx
 import tldextract
-import ssl
-import socket
 
 SUSPICIOUS_KEYWORDS = [
     "login", "signin", "secure", "verify", "verification", "account", "update",
@@ -114,21 +117,21 @@ POPULAR_BRANDS = ["google", "paypal", "apple", "microsoft", "netflix", "amazon",
 
 def check_typosquatting(domain_part: str) -> Optional[str]:
     dp_lower = domain_part.lower()
-    
-    # 1. Direct character substitution checks
+
+
     subs = dp_lower.replace("1", "l").replace("0", "o").replace("i", "l").replace("vv", "w")
     for brand in POPULAR_BRANDS:
         if brand in subs and brand not in dp_lower:
             return brand
 
-    # 2. Lookalike substrings with similar length
+
     for brand in POPULAR_BRANDS:
         brand_prefix = brand[:-1]
         if len(brand_prefix) >= 4:
             if brand_prefix in dp_lower and brand not in dp_lower:
                 if abs(len(dp_lower) - len(brand)) <= 3:
                     return brand
-                    
+
     return None
 
 def normalize_and_filter_links(links: List[str], base_url: str, domain: str) -> List[str]:
@@ -183,7 +186,7 @@ async def scan_single_page(page_url: str, verify_ssl: bool, headers: dict) -> Op
 def get_ssl_issuer(hostname: str) -> Optional[str]:
     try:
         context = ssl.create_default_context()
-        # Use short timeout so it doesn't block indefinitely
+
         with socket.create_connection((hostname, 443), timeout=3.0) as sock:
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                 cert = ssock.getpeercert()
@@ -223,12 +226,12 @@ class PageContentParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         self.current_tag = tag
         attrs_dict = dict(attrs)
-        
-        # Check attributes of any tag for context menu, copy, paste, selectstart overrides
+
+
         for attr_name, attr_val in attrs:
             if attr_name.lower() in ["oncontextmenu", "oncopy", "onpaste", "onselectstart"]:
                 self.copy_paste_locks_detected = True
-        
+
         if tag == "title":
             self.in_title = True
         elif tag in ["h1", "h2", "h3"]:
@@ -298,19 +301,19 @@ class PageContentParser(HTMLParser):
         cleaned_data = data.strip()
         if not cleaned_data:
             return
-            
+
         if self.in_title:
             self.title = cleaned_data
         elif self.in_heading:
             self.headings.append(cleaned_data)
-        
+
         if self.current_tag == "script":
             script_text = cleaned_data.lower()
             if "location.href" in script_text or "location.replace" in script_text or "window.location" in script_text or "location.assign" in script_text:
                 self.js_redirect_detected = True
             if self.current_script_is_inline:
                 self.inline_scripts_length += len(data)
-        
+
         if self.current_tag not in ["script", "style", "title", "head", "meta", "link"]:
             self.text_content.append(cleaned_data)
 
@@ -322,27 +325,27 @@ async def analyze_url(url: str) -> dict:
     3. Verifies HTTPS connectivity.
     4. Queries RDAP for domain age and registrar.
     """
-    # 1. Standardize and parse URL
+
     parsed_url = urllib.parse.urlparse(url)
     if not parsed_url.scheme:
-        # Default to http for scanning if not specified
+
         url = "http://" + url
         parsed_url = urllib.parse.urlparse(url)
-    
+
     hostname = parsed_url.hostname or ""
     path = parsed_url.path or ""
     query = parsed_url.query or ""
-    
-    # Extract domain parts
+
+
     extracted = tldextract.extract(hostname)
     domain = f"{extracted.domain}.{extracted.suffix}" if extracted.domain and extracted.suffix else hostname
-    
-    # We no longer bypass analysis for popular domains to ensure every website is checked directly
-    
-    # 2. Heuristics & Pattern Analysis
+
+
+
+
     suspicious_patterns = []
-    
-    # Check for typosquatting / brand impersonation in domain or subdomains
+
+
     official_domains = {
         "google": ["google.com", "google.co.uk", "google.co.in", "google.ad", "google.ae", "google.com.sg"],
         "paypal": ["paypal.com", "paypal.me"],
@@ -353,7 +356,7 @@ async def analyze_url(url: str) -> dict:
         "facebook": ["facebook.com", "fb.com"],
         "stripe": ["stripe.com"]
     }
-    
+
     brand_impersonated = None
     if extracted.domain:
         brand_match = check_typosquatting(extracted.domain)
@@ -365,7 +368,7 @@ async def analyze_url(url: str) -> dict:
                     break
             if not is_official:
                 brand_impersonated = brand_match
-                
+
     if not brand_impersonated and extracted.subdomain:
         subdomains = [s for s in extracted.subdomain.split(".") if s]
         for sub in subdomains:
@@ -379,43 +382,43 @@ async def analyze_url(url: str) -> dict:
                 if not is_official:
                     brand_impersonated = brand_match
                     break
-                    
+
     if brand_impersonated:
         suspicious_patterns.append(f"Brand lookalike/impersonation (typosquatting) detected (impersonating '{brand_impersonated}')")
 
-    # IP address instead of domain name
+
     if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", hostname):
         suspicious_patterns.append("IP Address used instead of Domain Name")
-        
-    # Check for suspicious keywords in domain or path
+
+
     found_keywords = []
     for kw in SUSPICIOUS_KEYWORDS:
         if kw in hostname.lower() or kw in path.lower() or kw in query.lower():
-            # If it's a known brand (e.g. google.com) don't trigger the keyword warning for their own domain
+
             if kw in ["google", "paypal", "apple", "microsoft", "amazon", "netflix"] and kw in extracted.domain.lower():
                 continue
             found_keywords.append(kw)
     if found_keywords:
         suspicious_patterns.append(f"Suspicious keywords detected: {', '.join(found_keywords)}")
 
-    # Check for too many subdomains
+
     subdomains = [s for s in extracted.subdomain.split(".") if s]
     if len(subdomains) >= 3:
         suspicious_patterns.append(f"High number of subdomains ({len(subdomains)}) detected")
-        
-    # Check for hyphens in the domain name (very common in phishing domains like "secure-login-bank.com")
+
+
     if "-" in extracted.domain:
         suspicious_patterns.append("Domain name contains suspicious hyphens")
-        
-    # Abnormally long domain name
+
+
     if len(extracted.domain) > 25:
         suspicious_patterns.append("Abnormally long domain name")
 
-    # 3. Verify HTTPS Connectivity and Server Status
+
     https_enabled = False
     ssl_valid = False
     http_reachable = False
-    
+
     headers_report = {
         "Strict-Transport-Security": False,
         "Content-Security-Policy": False,
@@ -424,22 +427,22 @@ async def analyze_url(url: str) -> dict:
         "Referrer-Policy": False,
         "Server": "Unknown"
     }
-    
-    # Try HTTPS first
+
+
     test_urls = []
     if parsed_url.scheme == "https":
         test_urls = [url, url.replace("https://", "http://")]
     else:
         test_urls = [url.replace("http://", "https://"), url]
 
-    # Standard browser-like user agent to prevent Cloudflare/WAF block
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     final_resolved_url = None
 
-    # Test HTTPS (First try with standard SSL verification)
+
     https_url = test_urls[0] if "https://" in test_urls[0] else test_urls[1]
     async with httpx.AsyncClient(timeout=4.0, follow_redirects=True, headers=headers) as client:
         try:
@@ -459,7 +462,7 @@ async def analyze_url(url: str) -> dict:
         except Exception:
             pass
 
-    # Retry without SSL verification if HTTPS failed to resolve, in case of untrusted or local proxy SSL certs
+
     if not https_enabled:
         async with httpx.AsyncClient(timeout=4.0, follow_redirects=True, verify=False, headers=headers) as client:
             try:
@@ -477,7 +480,7 @@ async def analyze_url(url: str) -> dict:
             except Exception:
                 pass
 
-    # Test HTTP fallback if HTTP reachable is still False
+
     if not http_reachable:
         http_url = test_urls[1] if "http://" in test_urls[1] else test_urls[0]
         async with httpx.AsyncClient(timeout=4.0, follow_redirects=True, headers=headers) as client:
@@ -498,18 +501,18 @@ async def analyze_url(url: str) -> dict:
         suspicious_patterns.append("HTTPS is not enabled or SSL certificate is invalid")
     elif not ssl_valid:
         suspicious_patterns.append("HTTPS is enabled but SSL certificate could not be verified")
-        
+
     if not http_reachable:
         suspicious_patterns.append("Host is currently unresponsive or unreachable")
 
-    # Cross-domain redirection check
+
     if final_resolved_url:
         parsed_final = urllib.parse.urlparse(final_resolved_url)
         final_hostname = parsed_final.hostname or ""
         if final_hostname:
             extracted_final = tldextract.extract(final_hostname)
             final_domain = f"{extracted_final.domain}.{extracted_final.suffix}" if extracted_final.domain and extracted_final.suffix else final_hostname
-            
+
             if final_domain.lower() != domain.lower():
                 is_final_popular = final_domain.lower() in ["google.com", "facebook.com", "microsoft.com", "apple.com", "github.com", "twitter.com", "instagram.com", "linkedin.com", "google.co.in", "google.co.uk", "google.ad", "google.ae", "google.com.sg"]
                 if not is_final_popular:
@@ -523,10 +526,10 @@ async def analyze_url(url: str) -> dict:
         except Exception:
             pass
 
-    # 4. Domain Registration Age & Registrar via RDAP
+
     domain_age_days = None
     registrar = "Unknown"
-    
+
     if domain:
         try:
             async with httpx.AsyncClient(timeout=6.0, follow_redirects=True) as client:
@@ -534,13 +537,13 @@ async def analyze_url(url: str) -> dict:
                 rdap_response = await client.get(rdap_url)
                 if rdap_response.status_code == 200:
                     data = rdap_response.json()
-                    
-                    # Extract registrar
-                    # Look in entities for entity with role 'registrar'
+
+
+
                     entities = data.get("entities", [])
                     for entity in entities:
                         if "registrar" in entity.get("roles", []):
-                            # Try to extract name from vcard
+
                             vcard = entity.get("vcardArray", [])
                             if len(vcard) > 1:
                                 for item in vcard[1]:
@@ -550,8 +553,8 @@ async def analyze_url(url: str) -> dict:
                             if registrar == "Unknown":
                                 registrar = entity.get("handle", "Unknown")
                             break
-                    
-                    # Extract creation/registration date
+
+
                     events = data.get("events", [])
                     created_date_str = None
                     for event in events:
@@ -559,21 +562,21 @@ async def analyze_url(url: str) -> dict:
                         if action in ["registration", "creation"]:
                             created_date_str = event.get("eventDate")
                             break
-                            
+
                     if created_date_str:
-                        # Clean date string (remove trailing Z or offsets if standard ISO formatting isn't perfect)
-                        # e.g., "2020-03-24T12:00:00Z"
+
+
                         created_date_str = created_date_str.replace("Z", "+00:00")
                         created_date = datetime.fromisoformat(created_date_str)
                         now = datetime.now(timezone.utc)
                         delta = now - created_date
                         domain_age_days = max(0, delta.days)
-                        
+
         except Exception as e:
-            # Degrade gracefully if RDAP queries fail
+
             print(f"RDAP lookup failed for {domain}: {str(e)}")
 
-    # Fetch page HTML and inspect forms
+
     html_content = ""
     page_data = {
         "title": "",
@@ -621,36 +624,36 @@ async def analyze_url(url: str) -> dict:
         try:
             parser = PageContentParser()
             parser.feed(html_content)
-            
+
             snippet = " ".join(parser.text_content[:30])
             if len(snippet) > 300:
                 snippet = snippet[:300] + "..."
-                
-            # Discovered subpages
+
+
             local_subpages = normalize_and_filter_links(parser.links, target_fetch_url, domain)
             target_subpages = local_subpages[:3]
-            
+
             subpage_results = []
             if target_subpages:
                 tasks = [scan_single_page(sub_url, verify_ssl, headers) for sub_url in target_subpages]
                 subpage_results = await asyncio.gather(*tasks)
                 subpage_results = [r for r in subpage_results if r]
-                
-            # Aggregate inputs, forms, scripts, and target URLs scanned
+
+
             all_inputs = list(parser.inputs)
             all_forms = list(parser.forms)
             all_scripts = list(parser.scripts)
             subpage_urls_scanned = []
-            
+
             for r in subpage_results:
                 all_inputs.extend(r["inputs"])
                 all_forms.extend(r["forms"])
                 all_scripts.extend(r["scripts"])
                 subpage_urls_scanned.append(r["url"])
-                
+
             has_pwd = any(inp.get("type", "").lower() == "password" for inp in all_inputs)
-            
-            # Check for card inputs
+
+
             has_card_field = False
             card_kws = ["cardnumber", "card-number", "cc-num", "cvv", "cvc", "expiry", "expiration", "cardholder", "cc-name"]
             for inp in all_inputs:
@@ -661,7 +664,7 @@ async def analyze_url(url: str) -> dict:
                     if kw in name_attr or kw in id_attr or kw in placeholder_attr:
                         has_card_field = True
                         break
-            
+
             external_scripts = []
             for src in all_scripts:
                 if src.startswith("http://") or src.startswith("https://") or src.startswith("//"):
@@ -669,12 +672,12 @@ async def analyze_url(url: str) -> dict:
                     src_domain = f"{extracted_src.domain}.{extracted_src.suffix}"
                     if src_domain != domain:
                         external_scripts.append(src)
-            
+
             favicon_url = ""
             if parser.favicon:
                 favicon_url = urllib.parse.urljoin(target_fetch_url, parser.favicon)
             else:
-                # Default fallback favicon check
+
                 favicon_url = urllib.parse.urljoin(target_fetch_url, "/favicon.ico")
 
             page_data = {
@@ -694,11 +697,11 @@ async def analyze_url(url: str) -> dict:
                 "inline_scripts_count": parser.inline_scripts_count,
                 "inline_scripts_length": parser.inline_scripts_length
             }
-            
-            # Trigger custom DOM-based heuristics
+
+
             if has_pwd and not https_enabled:
                 suspicious_patterns.append("Password input detected over insecure connection (HTTP)")
-            
+
             for f in all_forms:
                 act = f.get("action", "")
                 if act.startswith("http://") or act.startswith("https://") or act.startswith("//"):
@@ -709,41 +712,41 @@ async def analyze_url(url: str) -> dict:
                 if https_enabled and act.startswith("http://"):
                     suspicious_patterns.append("Insecure form action (HTTP) detected on secure page (HTTPS)")
 
-            # Check if sensitive prompt is hosted on unrecognized or new domain
+
             is_popular = domain in ["google.com", "paypal.com", "apple.com", "microsoft.com", "netflix.com", "amazon.com", "facebook.com", "stripe.com", "github.com", "okta.com", "auth0.com"]
             is_new_or_unknown = (domain_age_days is None) or (domain_age_days < 365)
             if has_pwd and not is_popular and is_new_or_unknown:
                 suspicious_patterns.append("Sensitive credential form hosted on unrecognized or new domain")
-                
+
             if has_card_field and not is_popular and is_new_or_unknown:
                 suspicious_patterns.append("Payment credential input forms hosted on unrecognized or new domain")
-                
-            # If the URL contains checkout/payment keywords on unrecognized/new domain:
+
+
             has_payment_kw = any(kw in url.lower() for kw in ["checkout", "pay", "payment", "invoice", "billing"])
             if has_payment_kw and not is_popular and is_new_or_unknown:
                 if not (has_pwd or has_card_field):
                     suspicious_patterns.append("Billing/checkout portal structure detected on unrecognized or new domain")
 
-            # Check if login page imports external scripts from third-party domains
+
             if has_pwd and external_scripts:
                 suspicious_patterns.append("Login page loads scripts from third-party external origins (potential session injection risk)")
-                
-            # Outgoing links scan for gateway/phishing redirects
+
+
             for l in parser.links:
                 resolved = urllib.parse.urljoin(target_fetch_url, l.split("#")[0])
                 extracted_res = tldextract.extract(resolved)
                 res_domain = f"{extracted_res.domain}.{extracted_res.suffix}"
-                
+
                 if res_domain != domain and extracted_res.domain:
                     has_dest_kw = any(kw in resolved.lower() for kw in ["login", "secure", "verify", "banking", "paypal", "meta-mask", "account", "update", "checkout", "pay"])
                     has_dest_tld = extracted_res.suffix in ["xyz", "top", "tk", "ml", "ga", "cf", "gq", "work", "click", "link", "zip", "science", "live", "info", "club"]
-                    
+
                     if has_dest_kw or has_dest_tld:
                         if res_domain not in ["google.com", "facebook.com", "microsoft.com", "apple.com", "github.com", "twitter.com", "instagram.com", "linkedin.com", "google.co.in", "google.co.uk", "google.ad", "google.ae", "google.com.sg"]:
                             suspicious_patterns.append(f"Suspicious outgoing link (phishing gateway) to '{res_domain}' detected")
                             break
-                            
-            # Meta refresh and JS redirect checks
+
+
             if parser.js_redirect_detected:
                 suspicious_patterns.append("Automated JavaScript redirection code detected in page script")
             if parser.redirects:
@@ -751,21 +754,21 @@ async def analyze_url(url: str) -> dict:
                 extracted_redir = tldextract.extract(resolved_redir)
                 redir_domain = f"{extracted_redir.domain}.{extracted_redir.suffix}"
                 suspicious_patterns.append(f"HTML meta-refresh redirect to '{redir_domain}' detected")
-                        
+
         except Exception as e:
             print(f"HTML parsing error: {e}")
 
-    # Suspicious TLD check
+
     SUSPICIOUS_TLDS = ["xyz", "top", "tk", "ml", "ga", "cf", "gq", "work", "click", "link", "zip", "science", "live", "info", "club"]
     if extracted.suffix in SUSPICIOUS_TLDS:
         if len(suspicious_patterns) > 0 or page_data.get("has_password_field", False):
             suspicious_patterns.append(f"Untrusted top-level domain (.{extracted.suffix}) combined with suspicious indicators")
 
-    # Age Heuristics: very new domains (< 90 days) are high risk
+
     if domain_age_days is not None and domain_age_days < 90:
         suspicious_patterns.append(f"Domain is extremely new (created only {domain_age_days} days ago)")
 
-    # Calculate default base Trust Score based on 5 security pillars
+
     domain_score = 25
     if not domain_age_days:
         domain_score -= 10
@@ -775,16 +778,16 @@ async def analyze_url(url: str) -> dict:
         domain_score -= 10
     elif domain_age_days > 730:
         domain_score += 3
-        
+
     if extracted.suffix in SUSPICIOUS_TLDS:
         domain_score -= 10
-        
+
     if brand_impersonated:
         domain_score -= 20
-        
+
     domain_score = max(0, min(25, domain_score))
-    
-    # Connection & SSL Security (Max 20)
+
+
     ssl_score = 20
     if not https_enabled:
         ssl_score -= 20
@@ -793,8 +796,8 @@ async def analyze_url(url: str) -> dict:
     if not headers_report["Strict-Transport-Security"]:
         ssl_score -= 3
     ssl_score = max(0, min(20, ssl_score))
-    
-    # DOM & Form Safety (Max 25)
+
+
     dom_score = 25
     if any("unrecognized or new domain" in p for p in suspicious_patterns):
         dom_score -= 15
@@ -805,8 +808,8 @@ async def analyze_url(url: str) -> dict:
     if page_data.get("iframes_count", 0) > 1:
         dom_score -= 4
     dom_score = max(0, min(25, dom_score))
-    
-    # HTTP Security Headers (Max 15)
+
+
     headers_score = 15
     if not headers_report["Content-Security-Policy"]:
         headers_score -= 4
@@ -817,8 +820,8 @@ async def analyze_url(url: str) -> dict:
     if not headers_report["Referrer-Policy"]:
         headers_score -= 3
     headers_score = max(0, min(15, headers_score))
-    
-    # Scripts & Redirects (Max 15)
+
+
     scripts_score = 15
     if any("Cross-domain redirect" in p for p in suspicious_patterns):
         scripts_score -= 15
@@ -827,17 +830,17 @@ async def analyze_url(url: str) -> dict:
     if any("Login page loads scripts from third-party" in p for p in suspicious_patterns):
         scripts_score -= 5
     scripts_score = max(0, min(15, scripts_score))
-    
+
     base_score = domain_score + ssl_score + dom_score + headers_score + scripts_score
-    
-    # Risk Multiplier / Compounded Risks
+
+
     if len(suspicious_patterns) >= 3:
         base_score -= 15
         suspicious_patterns.append("Multiple compounded risk indicators detected on website")
-        
+
     base_score = max(0, min(100, int(base_score)))
-    
-    # Force overrides for highly established domains
+
+
     if domain.lower() in POPULAR_DOMAINS:
         pop = POPULAR_DOMAINS[domain.lower()]
         base_score = pop["base_trust_score"]

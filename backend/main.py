@@ -1,13 +1,16 @@
-import os
-import uuid
+from __future__ import annotations
+
 from datetime import datetime, timezone
-from typing import List, Optional, Dict
+import os
+from pathlib import Path
+import uuid
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, HttpUrl, field_validator
-from dotenv import load_dotenv
-from supabase import create_client, Client
+from pydantic import BaseModel, field_validator
+from supabase import Client, create_client
 
 from analyzer import analyze_url
 from gemini_client import get_ai_explanation
@@ -16,7 +19,7 @@ load_dotenv()
 
 app = FastAPI(title="GhostNet Backend", version="1.0.0")
 
-# Setup CORS for frontend development
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -25,8 +28,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Supabase
-supabase_client: Optional[Client] = None
+
+supabase_client: Client | None = None
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
@@ -39,15 +42,14 @@ if SUPABASE_URL and SUPABASE_KEY and SUPABASE_URL != "your_supabase_url_here" an
 else:
     print("Supabase credentials not configured. Scans will be stored in-memory.")
 
-# In-memory history fallback database
-in_memory_scans = []
+
+in_memory_scans: list[dict] = []
 
 @app.get("/", response_class=HTMLResponse)
-async def read_root():
-    template_path = os.path.join(os.path.dirname(__file__), "templates", "index.html")
-    if os.path.exists(template_path):
-        with open(template_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
+async def read_root() -> HTMLResponse:
+    template_path = Path(__file__).resolve().parent / "templates" / "index.html"
+    if template_path.exists():
+        return HTMLResponse(content=template_path.read_text(encoding="utf-8"))
     return HTMLResponse(content="<h1>GhostNet Template Missing</h1>", status_code=404)
 
 class ScanRequest(BaseModel):
@@ -59,9 +61,9 @@ class ScanRequest(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("URL cannot be empty")
-        # Quick check for protocol, prepend if missing
+
         if not (v.startswith("http://") or v.startswith("https://")):
-            # Simple check if there's at least a dot
+
             if "." not in v:
                 raise ValueError("Invalid URL format")
         return v
@@ -77,38 +79,38 @@ class ScanReport(BaseModel):
     domain: str
     trust_score: int
     risk_level: str
-    domain_age_days: Optional[int]
+    domain_age_days: int | None
     registrar: str
     https_enabled: bool
-    suspicious_patterns: List[str]
+    suspicious_patterns: list[str]
     ghost_summary: str
-    ghost_summary_en: Optional[str] = None
+    ghost_summary_en: str | None = None
     ai_explanation: str
-    recommendations: List[str]
-    consequences: List[ConsequenceStep]
+    recommendations: list[str]
+    consequences: list[ConsequenceStep]
     created_at: str
-    crawled_page_content: Optional[Dict] = None
+    crawled_page_content: dict | None = None
 
 @app.post("/api/scan", response_model=ScanReport)
 async def scan_website(request: ScanRequest):
     input_url = request.url
-    
-    # 1. Perform technical analysis checks
+
+
     try:
         analysis = await analyze_url(input_url)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Technical analysis failed: {str(e)}")
-        
-    # 2. Get AI-powered explanation and final scoring from Gemini
+
+
     try:
         ai_response = await get_ai_explanation(analysis)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI generation failed: {str(e)}")
-        
-    # 3. Assemble complete report
+
+
     report_id = str(uuid.uuid4())
     created_at_str = datetime.now(timezone.utc).isoformat()
-    
+
     report_data = {
         "id": report_id,
         "url": analysis["url"],
@@ -127,11 +129,11 @@ async def scan_website(request: ScanRequest):
         "created_at": created_at_str,
         "crawled_page_content": analysis.get("crawled_page_content")
     }
-    
-    # 4. Save to Database (Supabase or In-Memory)
+
+
     if supabase_client:
         try:
-            # Try inserting with ghost_summary_en first
+
             supabase_client.table("scans").insert({
                 "id": report_data["id"],
                 "url": report_data["url"],
@@ -149,7 +151,7 @@ async def scan_website(request: ScanRequest):
                 "consequences": report_data["consequences"]
             }).execute()
         except Exception as e:
-            # If that fails (e.g. missing column in postgres table), retry without ghost_summary_en
+
             try:
                 supabase_client.table("scans").insert({
                     "id": report_data["id"],
@@ -171,21 +173,21 @@ async def scan_website(request: ScanRequest):
                 in_memory_scans.append(report_data)
     else:
         in_memory_scans.append(report_data)
-        
+
     return report_data
 
 @app.get("/api/history", response_model=List[ScanReport])
 async def get_history():
-    # Retrieve scan records
+
     history_records = []
-    
+
     if supabase_client:
         try:
             response = supabase_client.table("scans").select("*").order("created_at", desc=True).limit(20).execute()
             data_rows = response.data or []
-            
+
             for row in data_rows:
-                # Convert database format to match ScanReport schema
+
                 history_records.append({
                     "id": str(row["id"]),
                     "url": row["url"],
@@ -209,8 +211,8 @@ async def get_history():
             history_records = in_memory_scans.copy()
     else:
         history_records = in_memory_scans.copy()
-        
-    # Sort history records desc by date in case in-memory was used
+
+
     history_records.sort(key=lambda x: x["created_at"], reverse=True)
     return history_records[:20]
 

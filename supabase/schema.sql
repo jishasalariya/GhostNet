@@ -1,4 +1,3 @@
--- Create scans table for GhostNet database
 CREATE TABLE IF NOT EXISTS public.scans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     url TEXT NOT NULL,
@@ -16,8 +15,6 @@ CREATE TABLE IF NOT EXISTS public.scans (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Index for querying scan history quickly by date
 CREATE INDEX IF NOT EXISTS idx_scans_created_at ON public.scans (created_at DESC);
 
--- Index for searching unique scans by domain
 CREATE INDEX IF NOT EXISTS idx_scans_domain ON public.scans (domain);
